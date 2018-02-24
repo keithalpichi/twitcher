@@ -2,8 +2,12 @@ package twitch
 
 import (
 	"errors"
+	"fmt"
+	"io/ioutil"
 	"net/url"
 	"time"
+
+	"github.com/franela/goreq"
 )
 
 const (
@@ -25,6 +29,9 @@ var (
 
 	// ErrAuth is an error for an invalid request due to an expired token or invalid credentials
 	ErrAuth = errors.New("invalid token or credentials")
+
+	// ErrInvalidClient is an error for an invalid twitch.Client struct
+	ErrInvalidClient = errors.New("invalid twitch.Client")
 )
 
 // Twitcher represents the interface for the Twitch client
@@ -60,6 +67,42 @@ func NewClient(s, id string) (c *Client) {
 // Request gets a resource from Twitch at the `uri` resource with `v` query string parameters
 // It returns a byte array and an error
 func (c Client) Request(uri string, v url.Values) (resp []byte, err error) {
+	validToken := func(t Token) (b bool) {
+		if (t.Date == time.Time{} || t.AccessToken == "" || t.RefreshToken == "" || t.Exp == int64(0)) {
+			return
+		}
+		return true
+	}
+	if c.Secret == "" || c.ID == "" || !validToken(c.Token) {
+		err = ErrInvalidClient
+		return
+	}
+
+	res, rErr := goreq.Request{
+		Method:      "GET",
+		Uri:         twitchAPI + uri,
+		QueryString: v,
+	}.WithHeader("Authorization", fmt.Sprintf("Bearer %s", c.Token.AccessToken)).Do()
+	defer res.Body.Close()
+	if rErr != nil {
+		err = rErr
+		return
+	}
+
+	switch res.StatusCode {
+	case 200:
+		resp, err = ioutil.ReadAll(res.Body)
+	case 401:
+		err = ErrAuth
+	case 404:
+		err = ErrNotFound
+	case 400, 403:
+		err = fmt.Errorf("bad request with status code %d", res.StatusCode)
+	case 408:
+		err = ErrReqTimeout
+	default:
+		err = ErrTwitch
+	}
 	return
 }
 
@@ -79,4 +122,11 @@ func (c Client) GetRefreshToken() (t Token, err error) {
 // IsExpired returns true if the `t.AccessToken` is expired, false otherwise
 func (t Token) IsExpired() (b bool) {
 	return t.Date.Unix()+t.Exp > time.Now().Unix()
+}
+
+func validToken(t Token) (b bool) {
+	if (t.Date == time.Time{} || t.AccessToken == "" || t.RefreshToken == "" || t.Exp == int64(0)) {
+		return
+	}
+	return true
 }
