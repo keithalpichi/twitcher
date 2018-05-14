@@ -1,17 +1,36 @@
-package twitch
+package twitcher
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"net/http"
 	"net/url"
 	"time"
-
-	"github.com/franela/goreq"
 )
 
 const (
-	twitchAPI = "https://api.twitch.tv/"
+	// EndpointBase is the base URL of Twitch developer API
+	EndpointBase = "https://api.twitch.tv/"
+
+	// EndPointUsers is the URL endpoint for users
+	EndPointUsers = "https://api.twitch.tv/helix/users"
+
+	// EndPointFollowers is the URL endpoint for user followers
+	EndPointFollowers = "https://api.twitch.tv/helix/users/follows"
+
+	// EndPointVideos is the URL endpoint for videos
+	EndPointVideos = "https://api.twitch.tv/helix/videos"
+
+	// EndPointStreams is the URL endpoint for streams
+	EndPointStreams = "https://api.twitch.tv/helix/streams"
+
+	// EndPointGames is the URL endpoint for games
+	EndPointGames = "https://api.twitch.tv/helix/games"
+
+	// EndPointAppAccessTokens is the URL endpoint for requesting app access tokens
+	EndPointAppAccessTokens = "https://api.twitch.tv/kraken/oauth2/token"
 )
 
 var (
@@ -24,6 +43,12 @@ var (
 	// ErrReqTimeout is an error for a request timeout
 	ErrReqTimeout = errors.New("request timeout")
 
+	// ErrBadRequest is an error for a bad request
+	ErrBadRequest = errors.New("request timeout")
+
+	// ErrForbidden is an error for a forbidden request
+	ErrForbidden = errors.New("request forbidden")
+
 	// ErrTwitch is an error for a server error returned by Twitch
 	ErrTwitch = errors.New("Twitch server error")
 
@@ -34,71 +59,89 @@ var (
 	ErrInvalidClient = errors.New("invalid twitch.Client")
 )
 
-// Twitcher represents the interface for the Twitch client
-type Twitcher interface {
-	Request(string, url.Values) ([]byte, error)
-	GetAppAccessToken() (Token, error)
-	GetRefreshToken() (Token, error)
-}
-
-// Token represents a twitch token object returned from a token reqeust
-type Token struct {
-	Date         time.Time
-	AccessToken  string   `json:"access_token"`
-	RefreshToken string   `json:"refresh_token"`
-	Exp          int64    `json:"expires_in"`
-	Scope        []string `json:"scope"`
+// Communicator represents the interface for the Twitch client
+type Communicator interface {
+	Do(*http.Request) (*http.Response, error)
 }
 
 // Client represents the Twitch client
 type Client struct {
+	HTTP Communicator
 	Token
+	AppConfig
+}
+
+// AppConfig represents the Twitch application secret and ID
+type AppConfig struct {
 	Secret string
 	ID     string
 }
 
-// NewClient initializes a `Client` struct with `s` as the app secret and `id` as the app ID
-func NewClient(s, id string) (c *Client) {
-	c.Secret = s
-	c.ID = id
+// ClientConfig is the configuration struct provided to `twitcher.NewClient` to initialize a new client
+type ClientConfig struct {
+	HTTP Communicator
+	AppConfig
+}
+
+// Request contains information about a future HTTP request; such as the http.Request and the destination URL
+type Request struct {
+	HTTP http.Request
+	URL  string
+}
+
+func defaultComunicator() Communicator {
+	return &http.Client{
+		Timeout: time.Second * 30,
+	}
+}
+
+// NewClient initializes a `Client` struct with the app secret and ID along with a http client
+func NewClient(cf ClientConfig) (c *Client) {
+	c.Secret = cf.Secret
+	c.ID = cf.ID
+	if cf.HTTP == nil {
+		c.HTTP = defaultComunicator()
+	} else {
+		c.HTTP = cf.HTTP
+	}
 	return
 }
 
-// Request gets a resource from Twitch at the `uri` resource with `v` query string parameters
+// Request gets a resource from Twitch with the values from `opts`
 // It returns a byte array and an error
-func (c Client) Request(uri string, v url.Values) (resp []byte, err error) {
-	validToken := func(t Token) (b bool) {
-		if (t.Date == time.Time{} || t.AccessToken == "" || t.RefreshToken == "" || t.Exp == int64(0)) {
-			return
-		}
-		return true
-	}
-	if c.Secret == "" || c.ID == "" || !validToken(c.Token) {
+func (c Client) Request(opts Request) (resp []byte, err error) {
+	if !c.validCredentials() || !c.Token.valid() {
 		err = ErrInvalidClient
 		return
 	}
-
-	res, rErr := goreq.Request{
-		Method:      "GET",
-		Uri:         twitchAPI + uri,
-		QueryString: v,
-	}.WithHeader("Authorization", fmt.Sprintf("Bearer %s", c.Token.AccessToken)).Do()
-	defer res.Body.Close()
-	if rErr != nil {
-		err = rErr
+	if !opts.validRequest() {
+		err = ErrInvalidReq
 		return
 	}
 
+	req, err := http.NewRequest(opts.HTTP.Method, fmt.Sprintf("%s?%s", opts.URL, opts.HTTP.Form.Encode()), nil)
+	if err != nil {
+		return
+	}
+	req.Header.Add("Authorization", c.Token.AuthorizationHeader())
+	res, err := c.HTTP.Do(req)
+	if err != nil {
+		return
+	}
+	defer res.Body.Close()
+
 	switch res.StatusCode {
-	case 200:
+	case http.StatusOK:
 		resp, err = ioutil.ReadAll(res.Body)
-	case 401:
+	case http.StatusUnauthorized:
 		err = ErrAuth
-	case 404:
+	case http.StatusNotFound:
 		err = ErrNotFound
-	case 400, 403:
-		err = fmt.Errorf("bad request with status code %d", res.StatusCode)
-	case 408:
+	case http.StatusBadRequest:
+		err = ErrBadRequest
+	case http.StatusForbidden:
+		err = ErrForbidden
+	case http.StatusRequestTimeout:
 		err = ErrReqTimeout
 	default:
 		err = ErrTwitch
@@ -106,26 +149,43 @@ func (c Client) Request(uri string, v url.Values) (resp []byte, err error) {
 	return
 }
 
-// GetAppAccessToken gets app access token from Twitch
-func (c Client) GetAppAccessToken() (t Token, err error) {
-	// set t.Date to time.Now().Unix()
-	// c.Request, decode into Token
+// AppAccessToken gets app access token from Twitch and puts it in the `c` Client.
+// It returns an error. A nil error means the request was successful.
+func (c Client) AppAccessToken() (err error) {
+	v := url.Values{}
+	v.Set("client_id", c.ID)
+	v.Set("client_secret", c.Secret)
+	v.Set("grant_type", "client_credentials")
+	opts := Request{
+		HTTP: http.Request{
+			Method: http.MethodGet,
+			Form:   v,
+		},
+		URL: EndPointAppAccessTokens,
+	}
+	bytes, e := c.Request(opts)
+	if e != nil {
+		err = e
+		return
+	}
+	var t Token
+	if e := json.Unmarshal(bytes, &t); err != nil {
+		err = e
+		return
+	}
+	c.Token = t
 	return
 }
 
-// GetRefreshToken gets a new token from Twitch
-func (c Client) GetRefreshToken() (t Token, err error) {
-	// c.Request, decode into token
-	return
+func (c Client) validCredentials() (b bool) {
+	if c.Secret == "" || c.ID == "" {
+		return
+	}
+	return true
 }
 
-// IsExpired returns true if the `t.AccessToken` is expired, false otherwise
-func (t Token) IsExpired() (b bool) {
-	return t.Date.Unix()+t.Exp > time.Now().Unix()
-}
-
-func validToken(t Token) (b bool) {
-	if (t.Date == time.Time{} || t.AccessToken == "" || t.RefreshToken == "" || t.Exp == int64(0)) {
+func (r Request) validRequest() (b bool) {
+	if r.HTTP.Method == "" || r.URL == "" || len(r.HTTP.Form) == 0 {
 		return
 	}
 	return true
