@@ -1,3 +1,5 @@
+> Still in development! To contribute, review the To Do section, and/or open an issue
+
 # Twitcher
 
 ## What is Twitcher?
@@ -5,6 +7,9 @@ A Go package to interact with Twitch's API.
 
 ## Installation
 `go get -u github.com/keithalpichi/twitcher`
+
+## Documentation
+[Godoc](https://godoc.org/github.com/keithalpichi/twitcher)
 
 ## Usage
 First head to [Twitch](https://dev.twitch.tv/docs/authentication/#registration) to create an application to get a Client ID and Secret
@@ -40,7 +45,7 @@ Get Twitch users by Login (username)
 ```
 users, err := c.UsersByLogin([]string{"user1", "user2"})
 ```
-See the rest in the API Reference section below
+See the rest in the [Godoc API Reference](https://godoc.org/github.com/keithalpichi/twitcher)
 
 
 **2.**
@@ -58,26 +63,6 @@ opts := twitcher.Request{
 resp, err := c.Request(opts)
 ```
 
-# API Reference
-
-### Users
-|Description|Function|
-|:---|:---|
-|User by ID|`UserByID(string) twitcher.User, error`|
-|User by Login|`UserByLogin(string) twitcher.User, error`|
-|Users by ID|`UsersByID([]string) []twitcher.User, error`|
-|Users by Login|`UserByLogin([]string) []twitcher.User, error`|
-
-### Videos
-|Description|Function|
-|:---|:---|
-|Videos by User|`VideosByUser(string) []twitcher.Video, error`|
-|Videos by Game ID|`VideosByGameID(string) []twitcher.Video, error`|
-|Video by ID|`VideoByID(string) twitcher.Video, error`|
-|Videos by ID|`VideosByID([]string) []twitcher.Video, error`|
-
-### User Follows
-|Description|Function|
-|:---|:---|
-|User Followers|`UsersFollowing(string) []twitcher.User, error`|
-|User Following|`FollowedByUser(string) []twitcher.User, error`|
+## To Do
+- implement all resource functions such as user, video, clips, games, streams, follows, etc.
+- write more tests, of course

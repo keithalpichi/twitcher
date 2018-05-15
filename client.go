@@ -1,3 +1,7 @@
+/*
+Package twitcher is a pure Go client package for interacting with Twitch's New Twitch API (2018). It includes high-level API's to make simple requests for Twitch resources
+and low-level API's to let you handle the requests and responses.
+*/
 package twitcher
 
 import (
