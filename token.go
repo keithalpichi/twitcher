@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// Token represents a twitch token object returned from a token request
+// Token represents a twitch API access token returned from a token request
 type Token struct {
 	Date         time.Time
 	AccessToken  string   `json:"access_token"`
