@@ -22,19 +22,6 @@ func (mh mockHTTP) Do(*http.Request) (resp *http.Response, err error) {
 	return
 }
 
-// type mockReadCloser []byte
-//
-// func (mrc mockReadCloser) Write(p []byte) (n int, err error) {
-// 	mrc = append(mrc, p...)
-// 	return len(mrc), nil
-// }
-// func (mrc mockReadCloser) Read(p []byte) (n int, err error) {
-// 	return
-// }
-// func (mrc mockReadCloser) Close() error {
-// 	return nil
-// }
-
 func validCredsIf(b bool) (ac AppConfig) {
 	if b {
 		ac.Secret = "valid secret"
