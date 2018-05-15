@@ -1,6 +1,8 @@
 package twitcher
 
 import (
+	"bytes"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"testing"
@@ -15,19 +17,23 @@ type mockHTTP struct {
 func (mh mockHTTP) Do(*http.Request) (resp *http.Response, err error) {
 	resp = &http.Response{
 		StatusCode: mh.fakeStatusCode,
-		Body:       mockReadCloser{},
+		Body:       ioutil.NopCloser(bytes.NewReader(mh.fakeBody)),
 	}
 	return
 }
 
-type mockReadCloser struct{}
-
-func (mrc mockReadCloser) Read(p []byte) (n int, err error) {
-	return
-}
-func (mrc mockReadCloser) Close() error {
-	return nil
-}
+// type mockReadCloser []byte
+//
+// func (mrc mockReadCloser) Write(p []byte) (n int, err error) {
+// 	mrc = append(mrc, p...)
+// 	return len(mrc), nil
+// }
+// func (mrc mockReadCloser) Read(p []byte) (n int, err error) {
+// 	return
+// }
+// func (mrc mockReadCloser) Close() error {
+// 	return nil
+// }
 
 func validCredsIf(b bool) (ac AppConfig) {
 	if b {
@@ -194,32 +200,33 @@ func TestInvalidClientRequests(t *testing.T) {
 	}
 }
 
-// func TestValidClientRequests(t *testing.T) {
-//   cases := []struct {
-// 		request        Request
-// 		expectedResp    []byte
-// 		msg            string
-// 	}{
-// 		{
-// 			expectedResp: []byte("valid response"),
-// 			msg:          "valid request",
-// 		},
-//   }
-//   for _, c := range cases {
-// 		client := Client{
-// 			HTTP: mockHTTP{
-// 				fakeStatusCode: http.StatusOK,
-// 			},
-// 			Token:     validTokenIf(true),
-// 			AppConfig: validCredsIf(true),
-// 		}
-//
-// 		req := invalidRequestIf(false)
-//
-// 		if resp, err := client.Request(req); err != nil {
-//       t.Errorf("%s. Got %v, expected %v", c.msg, err, c.expectedResp)
-//     } resp != c.expectedResp {
-// 			t.Errorf("%s. Got %v, expected %v", c.msg, resp, c.expectedResp)
-// 		}
-// 	}
-// }
+func TestValidClientRequests(t *testing.T) {
+	cases := []struct {
+		request      Request
+		expectedResp []byte
+		msg          string
+	}{
+		{
+			expectedResp: []byte("valid response"),
+			msg:          "valid request",
+		},
+	}
+	for _, c := range cases {
+		client := Client{
+			HTTP: mockHTTP{
+				fakeStatusCode: http.StatusOK,
+				fakeBody:       c.expectedResp,
+			},
+			Token:     validTokenIf(true),
+			AppConfig: validCredsIf(true),
+		}
+
+		req := invalidRequestIf(false)
+
+		if resp, err := client.Request(req); err != nil {
+			t.Errorf("%s. Got %s, expected %s", c.msg, err.Error(), string(c.expectedResp))
+		} else if string(resp) != string(c.expectedResp) {
+			t.Errorf("%s. Got %s, expected %s", c.msg, string(resp), string(c.expectedResp))
+		}
+	}
+}
