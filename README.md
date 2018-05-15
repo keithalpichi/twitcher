@@ -66,3 +66,4 @@ resp, err := c.Request(opts)
 ## To Do
 - implement all resource functions such as user, video, clips, games, streams, follows, etc.
 - write more tests, of course
+- create an examples directory
