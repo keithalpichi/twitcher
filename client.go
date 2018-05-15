@@ -63,14 +63,20 @@ var (
 	ErrInvalidClient = errors.New("invalid twitch.Client")
 )
 
-// Communicator represents the interface for the Twitch client
-type Communicator interface {
+// Doer represents the interface for initiating HTTP requests.
+// Fulfilling this interface is useful for tests as you can mock requests and responses
+type Doer interface {
 	Do(*http.Request) (*http.Response, error)
+}
+
+// Requester represents the interface for the Twitch client
+type Requester interface {
+	Request(Request) ([]byte, error)
 }
 
 // Client represents the Twitch client
 type Client struct {
-	HTTP Communicator
+	HTTP Doer
 	Token
 	AppConfig
 }
@@ -83,7 +89,7 @@ type AppConfig struct {
 
 // ClientConfig is the configuration struct provided to `twitcher.NewClient` to initialize a new client
 type ClientConfig struct {
-	HTTP Communicator
+	HTTP Doer
 	AppConfig
 }
 
@@ -93,7 +99,7 @@ type Request struct {
 	URL  string
 }
 
-func defaultComunicator() Communicator {
+func defaultHTTPClient() *http.Client {
 	return &http.Client{
 		Timeout: time.Second * 30,
 	}
@@ -104,7 +110,7 @@ func NewClient(cf ClientConfig) (c *Client) {
 	c.Secret = cf.Secret
 	c.ID = cf.ID
 	if cf.HTTP == nil {
-		c.HTTP = defaultComunicator()
+		c.HTTP = defaultHTTPClient()
 	} else {
 		c.HTTP = cf.HTTP
 	}
